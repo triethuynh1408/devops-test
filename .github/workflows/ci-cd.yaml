@@ -70,6 +70,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Assume IAM Role (OIDC)
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
       # Code Scanning with Semgrep - Fail on ERROR findings
       - name: Install Semgrep
         run: pip install semgrep
