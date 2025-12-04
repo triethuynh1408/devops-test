@@ -57,12 +57,25 @@ jobs:
         id: build
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}:${IMAGE_TAG}"
+          IMAGE_REPO="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}"
+          IMAGE_URI="${IMAGE_REPO}:${IMAGE_TAG}"
 
           docker build -t $IMAGE_URI .
           docker push $IMAGE_URI
 
-          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          # Get digest AFTER pushing
+          IMAGE_DIGEST=$(aws ecr describe-images \
+            --repository-name ${PROJECT_NAME} \
+            --image-ids imageTag=${IMAGE_TAG} \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          echo "Image pushed with digest: ${IMAGE_DIGEST}"
+
+          # Export outputs for next job
+          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "image_digest=${IMAGE_DIGEST}" >> $GITHUB_OUTPUT
+          echo "image_repo=${IMAGE_REPO}" >> $GITHUB_OUTPUT
 
   security:
     needs: build
@@ -76,7 +89,14 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          
+
+      - name: Login to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REPO="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}"
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $REPO
+
       # Code Scanning with Semgrep - Fail on ERROR findings
       - name: Install Semgrep
         run: pip install semgrep
@@ -126,4 +146,4 @@ jobs:
         run: |
           cosign sign \
             --yes \
-            ${{ needs.build.outputs.image_uri }}
+            ${{ needs.build.outputs.image_repo }}@${{ needs.build.outputs.image_digest }}
