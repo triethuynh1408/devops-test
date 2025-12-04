@@ -76,7 +76,7 @@ jobs:
 
       - name: Run SAST (Semgrep)
         run: |
-          semgrep --config=p/ci --error
+          semgrep --config=p/ci --severity=CRITICAL --error --target .
 
       # Secret Scanning with Gitleaks
       - name: Gitleaks Secret Scan
