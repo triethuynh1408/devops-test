@@ -86,7 +86,7 @@ jobs:
 
       # Filesystem Scanning with Trivy
       - name: Trivy FS Scan (Python libs)
-        uses: aquasecurity/trivy-action@v0.17.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: "fs"
           severity: "HIGH,CRITICAL"
@@ -98,7 +98,7 @@ jobs:
           
       # Container Image Scanning with Trivy
       - name: Trivy Scan Image
-        uses: aquasecurity/trivy-action@v2
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ needs.build.outputs.image_uri }}
           severity: "CRITICAL,HIGH"

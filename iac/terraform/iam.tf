@@ -39,11 +39,19 @@ resource "aws_iam_role" "github_actions" {
 
 data "aws_iam_policy_document" "gha_policy" {
 
+  # ECR authentication
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecr:GetAuthorizationToken"
+    ]
+    resources = ["*"]
+  }
+
   # ECR push/pull
   statement {
     effect = "Allow"
     actions = [
-      "ecr:GetAuthorizationToken",
       "ecr:BatchGetImage",
       "ecr:BatchCheckLayerAvailability",
       "ecr:InitiateLayerUpload",
