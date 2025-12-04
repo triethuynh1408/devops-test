@@ -1,0 +1,122 @@
+name: DevSecOps CI/CD
+
+on:
+  push:
+    branches: [ "feat/exam-test" ]
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: devops-test
+  IMAGE_TAG: ${{ github.sha }}
+  K8S_NAMESPACE: dev
+  DEPLOYMENT_NAME: devops-test-app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python + Poetry
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install poetry
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-ansi
+
+      - name: Run pytest
+        run: |
+          poetry run pytest -q
+
+      # Assume IAM Role (OIDC)
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REPO="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}"
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $REPO
+
+      - name: Build & Push Docker Image
+        id: build
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}:${IMAGE_TAG}"
+
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+  security:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Code Scanning with Semgrep - Fail on ERROR findings
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run SAST (Semgrep)
+        run: |
+          semgrep --config=p/ci --error
+
+      # Secret Scanning with Gitleaks
+      - name: Gitleaks Secret Scan
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --source . --no-github --redact --exit-code 1
+
+      # Filesystem Scanning with Trivy
+      - name: Trivy FS Scan (Python libs)
+        uses: aquasecurity/trivy-action@v0.17.0
+        with:
+          scan-type: "fs"
+          severity: "HIGH,CRITICAL"
+          exit-code: 1
+          ignore-unfixed: true
+          format: "table"
+          scan-ref: "."
+          vuln-type: "library"
+          
+      # Container Image Scanning with Trivy
+      - name: Trivy Scan Image
+        uses: aquasecurity/trivy-action@v2
+        with:
+          image-ref: ${{ needs.build.outputs.image_uri }}
+          severity: "CRITICAL,HIGH"
+          vuln-type: "os,library"
+          exit-code: "1"
+          format: "json"
+
+      # Container Image Signing with Cosign
+      - name: Install Cosign
+        run: |
+          curl -sSL -o /usr/local/bin/cosign \
+            https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+          chmod +x /usr/local/bin/cosign
+
+      - name: Keyless Sign Container Image
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign \
+            --yes \
+            ${{ needs.build.outputs.image_uri }}
