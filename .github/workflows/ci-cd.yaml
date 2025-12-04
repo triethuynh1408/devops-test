@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_uri: ${{ steps.build.outputs.image_uri }}
+      image_repo: ${{ steps.build.outputs.image_repo }}
+      image_digest: ${{ steps.build.outputs.image_digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,6 +72,7 @@ jobs:
             --query 'imageDetails[0].imageDigest' \
             --output text)
 
+          echo "Image Repo: $IMAGE_REPO"
           echo "Image pushed with digest: ${IMAGE_DIGEST}"
 
           # Export outputs for next job
@@ -144,6 +147,6 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          cosign sign \
-            --yes \
-            ${{ needs.build.outputs.image_repo }}@${{ needs.build.outputs.image_digest }}
+          IMAGE="${{ needs.build.outputs.image_repo }}@${{ needs.build.outputs.image_digest }}"
+          echo "Signing image: $IMAGE"
+          cosign sign --yes "$IMAGE"
