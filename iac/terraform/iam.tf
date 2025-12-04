@@ -19,9 +19,9 @@ data "aws_iam_policy_document" "oidc_assume" {
     actions = ["sts:AssumeRoleWithWebIdentity"]
 
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_owner}/${var.github_repo}:${var.github_branch}"]
+      values   = ["repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/${var.github_branch}"]
     }
 
     condition {
@@ -46,10 +46,12 @@ data "aws_iam_policy_document" "gha_policy" {
       "ecr:GetAuthorizationToken",
       "ecr:BatchGetImage",
       "ecr:BatchCheckLayerAvailability",
-      "ecr:CompleteLayerUpload",
-      "ecr:UploadLayerPart",
       "ecr:InitiateLayerUpload",
-      "ecr:PutImage"
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:DescribeImages"
     ]
     resources = [
       aws_ecr_repository.app.arn,
