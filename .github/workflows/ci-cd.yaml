@@ -101,7 +101,7 @@ jobs:
           aws ecr get-login-password --region $AWS_REGION \
             | docker login --username AWS --password-stdin $REPO
 
-      # Code Scanning with Semgrep - Fail on ERROR findings
+      # Code Scanning with Semgrep
       - name: Install Semgrep
         run: pip install semgrep
 
@@ -115,47 +115,74 @@ jobs:
         with:
           args: detect --source . --no-github --redact --report-format=sarif --report-path=gitleaks.sarif || true
 
-      # Filesystem Scanning with Trivy
-      - name: Trivy FS Scan (Python libs)
+      # Vulnerability Scanning with Trivy
+      - name: Generate Trivy FS Vulnerability Report
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
-          severity: HIGH,CRITICAL
-          exit-code: 0
-          ignore-unfixed: true
+          output: trivy-fs.json
           format: json
           scan-ref: .
-          vuln-type: library
-          output: trivy-fs.json
-          
-      # Container Image Scanning with Trivy
-      - name: Trivy Scan Image
+          exit-code: 0
+
+      - name: Upload FS Vulnerability Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-report
+          path: trivy-fs.json
+          retention-days: 7
+
+      - name: Fail FS scan on HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          format: table
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          skip-setup-trivy: true
+
+      - name: Generate Trivy Image Vulnerability Report
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ needs.build.outputs.image_uri }}
-          severity: CRITICAL,HIGH
-          vuln-type: os,library
-          exit-code: 0
-          format: json
           output: trivy-image.json
+          format: json
+          exit-code: 0
 
+      - name: Upload Image Vulnerability Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report
+          path: trivy-image.json
+          retention-days: 7
+
+      - name: Fail Image scan on HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ needs.build.outputs.image_uri }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          skip-setup-trivy: true
+
+      # Merge and Upload Reports
       - name: Merge SARIF files
         run: |
           mkdir -p merged-sarif
-          # Only merge SARIF if files exist
           [ -f semgrep.sarif ] && cp semgrep.sarif merged-sarif/
           [ -f gitleaks.sarif ] && cp gitleaks.sarif merged-sarif/
-          # Use sarif-cli to merge (install if missing)
-          pip install sarif-cli
           sarif merge merged-sarif/*.sarif -o combined.sarif || true
 
-      - name: Upload SARIF to GitHub
+      - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: combined.sarif
 
       - name: Upload Security Reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: security-reports
           path: |
