@@ -134,6 +134,14 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gitleaks.sarif
+          category: gitleaks
+      
+      - name: Upload Gitleaks SARIF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-sarif
+          path: gitleaks.sarif
+          retention-days: 7
 
       # Vulnerability Scanning with Trivy - Filesystem
       - name: Generate Trivy FS Vulnerability Report
@@ -218,3 +226,40 @@ jobs:
           IMAGE="${{ needs.build.outputs.image_repo }}@${{ needs.build.outputs.image_digest }}"
           echo "Signing image: $IMAGE"
           cosign sign --yes "$IMAGE"
+
+      - name: Generate Final Security Summary
+        id: summary
+        run: |
+          echo "# 🔐 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          parse_sarif() {
+            file="$1"
+            tool="$2"
+
+            if [ ! -f "$file" ]; then
+              echo "SARIF not found: $file - skipping"
+              return
+            fi
+
+            CRITICAL=$(jq '[..|.level? | select(.=="error")] | length' "$file")
+            HIGH=$(jq '[..|.level? | select(.=="warning")] | length' "$file")
+            MEDIUM=$(jq '[..|.level? | select(.=="note")] | length' "$file")
+            LOW=$(jq '[..|.level? | select(.=="none")] | length' "$file")
+
+            echo "## 🔎 $tool Results" >> $GITHUB_STEP_SUMMARY
+            echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔥 Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔴 High     | $HIGH |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟠 Medium   | $MEDIUM |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟡 Low      | $LOW |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          }
+
+          parse_sarif "semgrep.sarif" "Semgrep SAST"
+          parse_sarif "gitleaks.sarif" "Gitleaks Secrets Scan"
+          parse_sarif "trivy-fs.sarif" "Trivy Filesystem Vulnerability Scan"
+          parse_sarif "trivy-image.sarif" "Trivy Container Image Scan"
+
+          echo "### ✔️ Summary Generated Successfully" >> $GITHUB_STEP_SUMMARY
