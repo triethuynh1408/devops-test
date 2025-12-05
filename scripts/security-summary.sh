@@ -1,103 +1,102 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Parsing SARIF and generating combined summary..."
+echo "Parsing SARIF and generating security summary per scanner..."
 
-# ---------------------------
-# Helper: safe JQ check
-# ---------------------------
-safe_jq() {
-  local FILE=$1
-  jq empty "$FILE" 2>/dev/null || { echo "Invalid SARIF: $FILE"; return 1; }
-}
+# SARIF files
+SEM_GREP_SARIF="semgrep.sarif"
+TRIVY_IMAGE_SARIF="trivy-image.sarif"
+TRIVY_FS_SARIF="trivy-fs.sarif"
+GITLEAKS_SARIF="gitleaks.sarif"
 
-# ---------------------------
-# Helper: count severity
-# ---------------------------
+# ------------------------------------------------------------------------------
+# Helper: count severity across SARIF formats
+# ------------------------------------------------------------------------------
 count_severity() {
-  local FILE=$1
-  local SEVERITY=$2
+    local file=$1
+    local severity=$2
 
-  jq -r --arg sev "$SEVERITY" '
-    [
-      .runs[].results[]
-      | (
-          # Trivy: uses properties.tags[] for severity
-          (try .properties.tags[] catch "") |
+    if [[ ! -f "$file" ]]; then
+        echo 0
+        return
+    fi
 
-          # Semgrep and Gitleaks: use .level
-          (try .level catch "")
+    jq --arg sev "$severity" '
+      if (.runs // empty) then
+        .runs[]
+        | (.results // [])
+        | map(
+            # Semgrep → level = error/warning
+            if ((.level // "" | ascii_upcase) == $sev) then 1
+
+            # Trivy → properties.tags contains severity
+            elif (.properties.tags // [] | map(ascii_upcase) | index($sev)) != null then 1
+
+            # Gitleaks → properties.severity
+            elif ((.properties.severity // "" | ascii_upcase) == $sev) then 1
+
+            else 0
+            end
         )
-        | ascii_upcase
-        | select(contains($sev))
-    ] | length
-  ' "$FILE"
+        | add
+      else
+        0
+      end
+    ' "$file" 2>/dev/null || echo 0
 }
 
-# Validate JSON
-safe_jq trivy-fs.sarif
-safe_jq trivy-image.sarif
-safe_jq gitleaks.sarif
-safe_jq semgrep.sarif
+# ------------------------------------------------------------------------------
+# Collect severity counts per tool
+# ------------------------------------------------------------------------------
+declare -A TRIVY_IMAGE TRIVY_FS SEMGREP GITLEAKS
 
-# TRIVY severity detection
-TRIVY_FS_CRIT=$(count_severity trivy-fs.sarif "CRITICAL")
-TRIVY_FS_HIGH=$(count_severity trivy-fs.sarif "HIGH")
-TRIVY_FS_MED=$(count_severity trivy-fs.sarif "MEDIUM")
-TRIVY_FS_LOW=$(count_severity trivy-fs.sarif "LOW")
+for sev in CRITICAL HIGH MEDIUM LOW; do
+    TRIVY_IMAGE[$sev]=$(count_severity "$TRIVY_IMAGE_SARIF" "$sev")
+    TRIVY_FS[$sev]=$(count_severity "$TRIVY_FS_SARIF" "$sev")
+    SEMGREP[$sev]=$(count_severity "$SEM_GREP_SARIF" "$([ "$sev" = "CRITICAL" ] && echo "ERROR" || [ "$sev" = "HIGH" ] && echo "WARNING" || echo "$sev")")
+    GITLEAKS[$sev]=$(count_severity "$GITLEAKS_SARIF" "$sev")
+done
 
-TRIVY_IMG_CRIT=$(count_severity trivy-image.sarif "CRITICAL")
-TRIVY_IMG_HIGH=$(count_severity trivy-image.sarif "HIGH")
-TRIVY_IMG_MED=$(count_severity trivy-image.sarif "MEDIUM")
-TRIVY_IMG_LOW=$(count_severity trivy-image.sarif "LOW")
+# ------------------------------------------------------------------------------
+# Generate summary markdown
+# ------------------------------------------------------------------------------
+OUTPUT="scanner-security-summary.md"
 
-# GITLEAKS—map any .level="error" to HIGH
-GITLEAKS_HIGH=$(count_severity gitleaks.sarif "ERROR")
-GITLEAKS_MED=$(count_severity gitleaks.sarif "WARNING")
-GITLEAKS_LOW=$(count_severity gitleaks.sarif "NOTE")
-
-# SEMGREP
-SEMGREP_HIGH=$(count_severity semgrep.sarif "ERROR")
-SEMGREP_MED=$(count_severity semgrep.sarif "WARNING")
-SEMGREP_LOW=$(count_severity semgrep.sarif "NOTE")
-
-# OUTPUT
 {
-  echo "## 🔐 Security Scan Summary"
-  echo "---"
+echo "## 🔐 Security Summary per Scanner"
+echo ""
 
-  echo "### 🧨 Trivy FS Scan"
-  echo "| Severity | Count |"
-  echo "|----------|-------|"
-  echo "| Critical | $TRIVY_FS_CRIT |"
-  echo "| High     | $TRIVY_FS_HIGH |"
-  echo "| Medium   | $TRIVY_FS_MED |"
-  echo "| Low      | $TRIVY_FS_LOW |"
-  echo ""
+# Function to print table per tool
+print_table() {
+    local name=$1
+    declare -n counts=$2
 
-  echo "### 🐳 Trivy Image Scan"
-  echo "| Severity | Count |"
-  echo "|----------|-------|"
-  echo "| Critical | $TRIVY_IMG_CRIT |"
-  echo "| High     | $TRIVY_IMG_HIGH |"
-  echo "| Medium   | $TRIVY_IMG_MED |"
-  echo "| Low      | $TRIVY_IMG_LOW |"
-  echo ""
+    echo "### $name"
+    echo "| Severity | Count |"
+    echo "|---------|-------|"
+    echo "| 🔴 Critical | ${counts[CRITICAL]} |"
+    echo "| 🟠 High     | ${counts[HIGH]} |"
+    echo "| 🟡 Medium   | ${counts[MEDIUM]} |"
+    echo "| 🟢 Low      | ${counts[LOW]} |"
+    echo ""
+}
 
-  echo "### 🔑 Gitleaks"
-  echo "| Severity | Count |"
-  echo "|----------|-------|"
-  echo "| High     | $GITLEAKS_HIGH |"
-  echo "| Medium   | $GITLEAKS_MED |"
-  echo "| Low      | $GITLEAKS_LOW |"
-  echo ""
+print_table "Trivy Image Scan" TRIVY_IMAGE
+print_table "Trivy Filesystem Scan" TRIVY_FS
+print_table "Semgrep SAST" SEMGREP
+print_table "Gitleaks Secret Scan" GITLEAKS
 
-  echo "### 🛡️ Semgrep"
-  echo "| Severity | Count |"
-  echo "|----------|-------|"
-  echo "| High     | $SEMGREP_HIGH |"
-  echo "| Medium   | $SEMGREP_MED |"
-  echo "| Low      | $SEMGREP_LOW |"
-  echo ""
+echo "> Generated from SARIF results of each scanner."
+} > "$OUTPUT"
 
-} >> "$GITHUB_STEP_SUMMARY"
+echo "Summary generated → $OUTPUT"
+
+# ------------------------------------------------------------------------------
+# Publish to GitHub Actions UI if available
+# ------------------------------------------------------------------------------
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    echo "Publishing summary to GitHub Actions UI..."
+    cat "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+else
+    echo "GITHUB_STEP_SUMMARY not detected (running locally)."
+fi
