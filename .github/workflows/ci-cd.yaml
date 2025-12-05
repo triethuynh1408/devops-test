@@ -114,7 +114,10 @@ jobs:
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2
         with:
-          args: detect --redact --report-format=sarif --report-path=gitleaks.sarif
+          args: detect --redact --report-format=sarif --report-path=results.sarif
+
+      - name: Rename SARIF file
+        run: mv results.sarif gitleaks.sarif
 
       - name: Upload Gitleaks SARIF
         uses: github/codeql-action/upload-sarif@v4
