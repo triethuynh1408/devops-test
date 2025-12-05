@@ -256,7 +256,9 @@ jobs:
           ls -l scripts/*.sarif
 
       - name: Run Security Summary Report
-        run: ./scripts/security-summary.sh
+        run: |
+          cd scripts
+          ./security-summary.sh
         
       - name: Upload Summary Artifact
         uses: actions/upload-artifact@v4
