@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # --- Configuration ---
-TRIVY_FS_FILE="trivy-fs.sarif"
-TRIVY_IMAGE_FILE="trivy-image.sarif"
-GITLEAKS_FILE="gitleaks.sarif"
-SEMGREP_FILE="semgrep.sarif" 
+TRIVY_FS_FILE="${GITHUB_WORKSPACE}/trivy-fs.sarif"
+TRIVY_IMAGE_FILE="${GITHUB_WORKSPACE}/trivy-image.sarif"
+GITLEAKS_FILE="${GITHUB_WORKSPACE}/gitleaks.sarif"
+SEMGREP_FILE="${GITHUB_WORKSPACE}/semgrep.sarif"
 OUTPUT_FILE="scan_summary_all.md"
 
 # Severity order for reporting and indexing
@@ -112,7 +112,7 @@ process_gitleaks_sarif() {
 }
 
 
-## Function to process a Semgrep SARIF file (Code Analysis) - CRITICAL FIX
+## Function to process a Semgrep SARIF file (Code Analysis) - FIX APPLIED
 process_semgrep_sarif() {
     local file=$1
     local prefix=$2
@@ -125,22 +125,15 @@ process_semgrep_sarif() {
 
     local FILE_COUNTS=(0 0 0 0) # CRIT, HIGH, MED, LOW
 
-    # Single, robust jq query to capture findings from two locations:
-    # 1. Actual code findings (by linking result -> rule -> defaultConfiguration.level)
-    # 2. Tool execution notifications (for CI/CD syntax warnings)
+    # Corrected jq query: Only includes actual code findings from .results[]
     COUNTS=$(jq -r '
         .runs[0].tool.driver.rules as $rules |
         (
-            # 1. Logic for actual findings in .results[]
+            # 1. ONLY logic for actual code findings in .results[]
             .runs[].results[]? | 
             .ruleId as $ruleId | 
             ($rules[]? | select(.id == $ruleId)) | 
             .defaultConfiguration.level # <-- Uses level from rule definition
-        ),
-        (
-            # 2. Logic for tool warnings in .invocations[].toolExecutionNotifications[]
-            .runs[].invocations[].toolExecutionNotifications[]? |
-            .level
         ) |
         # Process and map all gathered levels
         ascii_upcase |
