@@ -1,0 +1,5 @@
+aws_region   = "us-east-1"
+project_name = "devops-test"
+github_owner  = "triethuynh1408"
+github_repo   = "devops-test"
+github_branch = "main"

@@ -1,0 +1,216 @@
+name: DevSecOps CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+  security-events: write
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: devops-test
+  IMAGE_TAG: ${{ github.sha }}
+  K8S_NAMESPACE: dev
+  DEPLOYMENT_NAME: devops-test-app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+      image_repo: ${{ steps.build.outputs.image_repo }}
+      image_digest: ${{ steps.build.outputs.image_digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install poetry
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-ansi
+
+      - name: Run pytest
+        run: |
+          poetry run pytest -q
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REPO="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}"
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $REPO
+
+      - name: Build & Push Docker Image
+        id: build
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_REPO="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}"
+          IMAGE_URI="${IMAGE_REPO}:${IMAGE_TAG}"
+
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+
+          # Get digest AFTER pushing
+          IMAGE_DIGEST=$(aws ecr describe-images \
+            --repository-name ${PROJECT_NAME} \
+            --image-ids imageTag=${IMAGE_TAG} \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          echo "Image Repo: $IMAGE_REPO"
+          echo "Image pushed with digest: ${IMAGE_DIGEST}"
+
+          # Export outputs for next job
+          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "image_digest=${IMAGE_DIGEST}" >> $GITHUB_OUTPUT
+          echo "image_repo=${IMAGE_REPO}" >> $GITHUB_OUTPUT
+
+  security:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REPO="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}"
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $REPO
+
+      # SAST with Semgrep
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run SAST (Semgrep)
+        run: semgrep scan --config auto --sarif --output semgrep.sarif
+
+      - name: Upload Semgrep SARIF to Security Tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+
+      - name: Upload Semgrep SARIF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+          retention-days: 7
+
+      # Secret Scanning with Gitleaks
+      - name: Gitleaks Secret Scan
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --redact --report-format=sarif --report-path=results.sarif
+
+      - name: Rename SARIF file
+        run: mv results.sarif gitleaks.sarif
+
+      - name: Upload Gitleaks SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gitleaks.sarif
+
+      # Vulnerability Scanning with Trivy - Filesystem
+      - name: Generate Trivy FS Vulnerability Report
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: 0
+          skip-setup-trivy: false
+
+      - name: Upload FS SARIF to Security Tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Upload FS SARIF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-sarif
+          path: trivy-fs.sarif
+          retention-days: 7
+
+      - name: Trivy FS - Fail on HIGH/CRITICAL
+        run: |
+          trivy fs . \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format table
+        env:
+          TRIVY_NON_SSL: "true"
+
+      # Vulnerability Scanning with Trivy - Container Image
+      - name: Generate Trivy Image Vulnerability Report
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ needs.build.outputs.image_uri }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: 0
+          skip-setup-trivy: false
+
+      - name: Upload Image SARIF to Security Tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Upload Image SARIF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-sarif
+          path: trivy-image.sarif
+          retention-days: 7
+
+      - name: Trivy Image - Fail on HIGH/CRITICAL
+        run: |
+          trivy image ${{ needs.build.outputs.image_uri }} \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format table
+        env:
+          TRIVY_NON_SSL: "true"
+
+      # Container Image Signing with Cosign
+      - name: Install Cosign
+        run: |
+          curl -sSL -o /usr/local/bin/cosign \
+            https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+          chmod +x /usr/local/bin/cosign
+
+      - name: Keyless Sign Container Image
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          IMAGE="${{ needs.build.outputs.image_repo }}@${{ needs.build.outputs.image_digest }}"
+          echo "Signing image: $IMAGE"
+          cosign sign --yes "$IMAGE"

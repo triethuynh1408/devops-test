@@ -7,3 +7,19 @@ docker
 *.zip
 client_secrets.json
 mycreds.txt
+
+# Local terraform state
+*.tfstate
+*.tfstate.*
+terraform.tfstate
+terraform.tfstate.*
+
+# Terraform plan files
+*.tfplan
+
+# Ignore terraform lock file (optional)
+# If you want deterministic provider versions, DO NOT ignore this
+.terraform.lock.hcl
+
+# Terraform working directory
+.terraform/
