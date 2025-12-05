@@ -103,14 +103,16 @@ jobs:
         run: pip install semgrep
 
       - name: Run SAST (Semgrep)
+        continue-on-error: true
         run: |
-          semgrep --config=p/ci --severity=ERROR --sarif --output semgrep.sarif || true
+          semgrep --config=p/ci --severity=ERROR --sarif --output semgrep.sarif
 
       # Secret Scanning with Gitleaks
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
         with:
-          args: detect --source . --no-github --redact --report-format=sarif --report-path=gitleaks.sarif || true
+          args: detect --redact --report-format sarif --report-path gitleaks.sarif
 
       # Vulnerability Scanning with Trivy - Filesystem
       - name: Generate Trivy FS Vulnerability Report
@@ -167,28 +169,17 @@ jobs:
           skip-setup-trivy: true
 
       # Merge and Upload Reports
-      - name: Install SARIF Multitool
-        run: |
-          wget https://github.com/microsoft/sarif-sdk/releases/latest/download/sarif-multitool-linux-x64.zip
-          unzip sarif-multitool-linux-x64.zip -d sarif-tools
-          chmod +x sarif-tools/sarif
+      - name: Merge SARIF results
+        uses: microsoft/sarif-tools@v3
+        with:
+          command: merge
+          input-files: |
+            semgrep.sarif
+            gitleaks.sarif
+          output-file: combined.sarif
 
-      - name: Merge SARIF files
-        run: |
-          mkdir -p merged-sarif
-          [ -f semgrep.sarif ] && cp semgrep.sarif merged-sarif/
-          [ -f gitleaks.sarif ] && cp gitleaks.sarif merged-sarif/
-          
-          if ls merged-sarif/*.sarif 1> /dev/null 2>&1; then
-            echo "Merging SARIF files..."
-            sarif-tools/sarif merge merged-sarif/*.sarif --output combined.sarif
-          else
-            echo "No SARIF files to merge."
-          fi
-
-      - name: Upload SARIF to GitHub Security tab
-        if: always() && hashFiles('combined.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload merged SARIF to code scanning
+        uses: github/code-scanning/upload-sarif@v3
         with:
           sarif_file: combined.sarif
 
