@@ -129,10 +129,12 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
-          output: trivy-fs.sarif
-          format: sarif
           scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: 0
+          skip-setup-trivy: false
 
       - name: Upload FS SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
@@ -146,31 +148,26 @@ jobs:
           path: trivy-fs.sarif
           retention-days: 7
 
-      - name: Reset Trivy env vars
+      - name: Trivy FS - Fail on HIGH/CRITICAL
         run: |
-          unset TRIVY_FORMAT
-          unset TRIVY_OUTPUT
-          unset TRIVY_EXIT_CODE
-
-      - name: Fail FS scan on HIGH/CRITICAL vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          format: table
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: 1
-          skip-setup-trivy: true
+          trivy fs . \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format table
+        env:
+          TRIVY_NON_SSL: "true"
 
       # Vulnerability Scanning with Trivy - Container Image
       - name: Generate Trivy Image Vulnerability Report
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ needs.build.outputs.image_uri }}
-          output: trivy-image.sarif
           format: sarif
+          output: trivy-image.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: 0
+          skip-setup-trivy: false
 
       - name: Upload Image SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
@@ -184,21 +181,15 @@ jobs:
           path: trivy-image.sarif
           retention-days: 7
 
-      - name: Reset Trivy env vars
+      - name: Trivy Image - Fail on HIGH/CRITICAL
         run: |
-          unset TRIVY_FORMAT
-          unset TRIVY_OUTPUT
-          unset TRIVY_EXIT_CODE
-
-      - name: Fail Image scan on HIGH/CRITICAL vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ needs.build.outputs.image_uri }}
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: 1
-          skip-setup-trivy: true
+          trivy image ${{ needs.build.outputs.image_uri }} \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format table
+        env:
+          TRIVY_NON_SSL: "true"
 
       # Container Image Signing with Cosign
       - name: Install Cosign
