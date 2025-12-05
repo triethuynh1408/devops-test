@@ -103,32 +103,44 @@ jobs:
         run: pip install semgrep
 
       - name: Run SAST (Semgrep)
-        continue-on-error: true
-        run: |
-          semgrep --config=p/ci --severity=ERROR --sarif --output semgrep.sarif
+        run: semgrep scan --config auto --sarif --output semgrep.sarif
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
 
       # Secret Scanning with Gitleaks
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
         with:
           args: detect --redact --report-format sarif --report-path gitleaks.sarif
+
+      - name: Upload Gitleaks SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gitleaks.sarif
 
       # Vulnerability Scanning with Trivy - Filesystem
       - name: Generate Trivy FS Vulnerability Report
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
-          output: trivy-fs.json
-          format: json
+          output: trivy-fs.sarif
+          format: sarif
           scan-ref: .
           exit-code: 0
 
-      - name: Upload FS Vulnerability Scan Results
+      - name: Upload FS SARIF to Security Tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs.sarif
+
+      - name: Upload FS SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-fs-report
-          path: trivy-fs.json
+          name: trivy-fs-sarif
+          path: trivy-fs.sarif
           retention-days: 7
 
       - name: Fail FS scan on HIGH/CRITICAL vulnerabilities
@@ -147,15 +159,20 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ needs.build.outputs.image_uri }}
-          output: trivy-image.json
-          format: json
+          output: trivy-image.sarif
+          format: sarif
           exit-code: 0
 
-      - name: Upload Image Vulnerability Scan Results
+      - name: Upload Image SARIF to Security Tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image.sarif
+
+      - name: Upload Image SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-image-report
-          path: trivy-image.json
+          name: trivy-image-sarif
+          path: trivy-image.sarif
           retention-days: 7
 
       - name: Fail Image scan on HIGH/CRITICAL vulnerabilities
@@ -167,32 +184,6 @@ jobs:
           ignore-unfixed: true
           exit-code: 1
           skip-setup-trivy: true
-
-      # Merge and Upload Reports
-      - name: Merge SARIF results
-        uses: microsoft/sarif-tools@v3
-        with:
-          command: merge
-          input-files: |
-            semgrep.sarif
-            gitleaks.sarif
-          output-file: combined.sarif
-
-      - name: Upload merged SARIF to code scanning
-        uses: github/code-scanning/upload-sarif@v3
-        with:
-          sarif_file: combined.sarif
-
-      - name: Upload All Security Reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-reports
-          path: |
-            semgrep.sarif
-            gitleaks.sarif
-            trivy-fs.json
-            trivy-image.json
-            combined.sarif
 
       # Container Image Signing with Cosign
       - name: Install Cosign
