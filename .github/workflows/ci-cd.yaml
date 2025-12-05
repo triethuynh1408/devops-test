@@ -140,6 +140,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs.sarif
+          category: trivy-fs
 
       - name: Upload FS SARIF Artifact
         uses: actions/upload-artifact@v4
@@ -173,6 +174,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-image.sarif
+          category: trivy-image
 
       - name: Upload Image SARIF Artifact
         uses: actions/upload-artifact@v4
