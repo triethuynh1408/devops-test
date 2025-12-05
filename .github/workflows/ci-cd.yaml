@@ -101,10 +101,13 @@ jobs:
           aws ecr get-login-password --region $AWS_REGION \
             | docker login --username AWS --password-stdin $REPO
 
-      # Code Scanning with Semgrep
-      - name: Install Semgrep
-        run: pip install semgrep
+      # Install tools 
+      - name: Install tools for security scanning
+        run: |
+          pip install semgrep sarif-cli
+          sudo apt-get update && sudo apt-get install -y jq
 
+      # Static Application Security Testing (SAST) with Semgrep
       - name: Run SAST (Semgrep)
         run: |
           semgrep --config=p/ci --severity=ERROR --sarif --output semgrep.sarif || true
@@ -177,7 +180,7 @@ jobs:
           sarif merge merged-sarif/*.sarif -o combined.sarif || true
 
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: combined.sarif
 
