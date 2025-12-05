@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # --- Configuration ---
-TRIVY_FS_FILE="${GITHUB_WORKSPACE}/trivy-fs.sarif"
-TRIVY_IMAGE_FILE="${GITHUB_WORKSPACE}/trivy-image.sarif"
-GITLEAKS_FILE="${GITHUB_WORKSPACE}/gitleaks.sarif"
-SEMGREP_FILE="${GITHUB_WORKSPACE}/semgrep.sarif"
+TRIVY_FS_FILE="trivy-fs.sarif"
+TRIVY_IMAGE_FILE="trivy-image.sarif"
+GITLEAKS_FILE="gitleaks.sarif"
+SEMGREP_FILE="semgrep.sarif"
 OUTPUT_FILE="scan_summary_all.md"
 
 # Severity order for reporting and indexing

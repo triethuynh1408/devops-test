@@ -107,40 +107,40 @@ jobs:
         run: pip install semgrep
 
       - name: Run SAST (Semgrep)
-        run: semgrep scan --config auto --sarif --output ${{ github.workspace }}/semgrep.sarif
+        run: semgrep scan --config auto --sarif --output semgrep.sarif
 
       - name: Upload Semgrep SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: ${{ github.workspace }}/semgrep.sarif
+          sarif_file: semgrep.sarif
 
       - name: Upload Semgrep SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif
-          path: ${{ github.workspace }}/semgrep.sarif
+          path: semgrep.sarif
           retention-days: 7
 
       # Secret Scanning with Gitleaks
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2
         with:
-          args: detect --redact --report-format=sarif --report-path=${{ github.workspace }}/results.sarif
+          args: detect --redact --report-format=sarif --report-path=results.sarif
 
       - name: Rename SARIF file
-        run: mv ${{ github.workspace }}/results.sarif ${{ github.workspace }}/gitleaks.sarif
+        run: mv results.sarif gitleaks.sarif
 
       - name: Upload Gitleaks SARIF
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: ${{ github.workspace }}/gitleaks.sarif
+          sarif_file: gitleaks.sarif
           category: gitleaks
       
       - name: Upload Gitleaks SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: gitleaks-sarif
-          path: ${{ github.workspace }}/gitleaks.sarif
+          path: gitleaks.sarif
           retention-days: 7
 
       # Vulnerability Scanning with Trivy - Filesystem
@@ -150,7 +150,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           format: sarif
-          output: ${{ github.workspace }}/trivy-fs.sarif
+          output: trivy-fs.sarif
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: 0
           skip-setup-trivy: false
@@ -158,14 +158,14 @@ jobs:
       - name: Upload FS SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: ${{ github.workspace }}/trivy-fs.sarif
+          sarif_file: trivy-fs.sarif
           category: trivy-fs
 
       - name: Upload FS SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-fs-sarif
-          path: ${{ github.workspace }}/trivy-fs.sarif
+          path: trivy-fs.sarif
           retention-days: 7
 
       - name: Trivy FS - Fail on HIGH/CRITICAL
@@ -184,7 +184,7 @@ jobs:
         with:
           image-ref: ${{ needs.build.outputs.image_uri }}
           format: sarif
-          output: ${{ github.workspace }}/trivy-image.sarif
+          output: trivy-image.sarif
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: 0
           skip-setup-trivy: false
@@ -192,14 +192,14 @@ jobs:
       - name: Upload Image SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: ${{ github.workspace }}/trivy-image.sarif
+          sarif_file: trivy-image.sarif
           category: trivy-image
 
       - name: Upload Image SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-image-sarif
-          path: ${{ github.workspace }}/trivy-image.sarif
+          path: trivy-image.sarif
           retention-days: 7
 
       - name: Trivy Image - Fail on HIGH/CRITICAL
@@ -227,6 +227,40 @@ jobs:
           echo "Signing image: $IMAGE"
           cosign sign --yes "$IMAGE"
 
-      # Security Summary Report
-      - name: Security Summary
+  summary-report:
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download All SARIF Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: sarif-downloads
+
+      - name: Consolidate SARIF files to 'scripts/' folder
+        run: |
+          echo "Moving SARIF files to scripts/ directory..."
+          
+          # 2. Move each SARIF file into the 'scripts' directory
+          mv sarif-downloads/semgrep-sarif/semgrep.sarif scripts/
+          mv sarif-downloads/gitleaks-sarif/gitleaks.sarif scripts/
+          mv sarif-downloads/trivy-fs-sarif/trivy-fs.sarif scripts/
+          mv sarif-downloads/trivy-image-sarif/trivy-image.sarif scripts/
+
+          # 3. Verify files are present in the scripts folder
+          echo "Contents of the scripts folder:"
+          ls -l scripts/*.sarif
+
+      - name: Run Security Summary Report
         run: ./scripts/security-summary.sh
+        
+      - name: Upload Summary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-summary-report
+          path: scripts/scan_summary_all.md
+          retention-days: 7
