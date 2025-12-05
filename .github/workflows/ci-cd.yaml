@@ -27,7 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Python + Poetry
       - uses: actions/setup-python@v4
         with:
           python-version: "3.12"
@@ -42,7 +41,6 @@ jobs:
         run: |
           poetry run pytest -q
 
-      # Assume IAM Role (OIDC)
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v3
         with:
@@ -87,7 +85,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Assume IAM Role (OIDC)
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v3
         with:
@@ -101,13 +98,10 @@ jobs:
           aws ecr get-login-password --region $AWS_REGION \
             | docker login --username AWS --password-stdin $REPO
 
-      # Install tools 
-      - name: Install tools for security scanning
-        run: |
-          pip install semgrep sarif-cli
-          sudo apt-get update && sudo apt-get install -y jq
+      # SAST with Semgrep
+      - name: Install Semgrep
+        run: pip install semgrep
 
-      # Static Application Security Testing (SAST) with Semgrep
       - name: Run SAST (Semgrep)
         run: |
           semgrep --config=p/ci --severity=ERROR --sarif --output semgrep.sarif || true
@@ -118,7 +112,7 @@ jobs:
         with:
           args: detect --source . --no-github --redact --report-format=sarif --report-path=gitleaks.sarif || true
 
-      # Vulnerability Scanning with Trivy
+      # Vulnerability Scanning with Trivy - Filesystem
       - name: Generate Trivy FS Vulnerability Report
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -146,6 +140,7 @@ jobs:
           exit-code: 1
           skip-setup-trivy: true
 
+      # Vulnerability Scanning with Trivy - Container Image
       - name: Generate Trivy Image Vulnerability Report
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -172,19 +167,32 @@ jobs:
           skip-setup-trivy: true
 
       # Merge and Upload Reports
+      - name: Install SARIF Multitool
+        run: |
+          wget https://github.com/microsoft/sarif-sdk/releases/latest/download/sarif-multitool-linux-x64.zip
+          unzip sarif-multitool-linux-x64.zip -d sarif-tools
+          chmod +x sarif-tools/sarif
+
       - name: Merge SARIF files
         run: |
           mkdir -p merged-sarif
           [ -f semgrep.sarif ] && cp semgrep.sarif merged-sarif/
           [ -f gitleaks.sarif ] && cp gitleaks.sarif merged-sarif/
-          sarif merge merged-sarif/*.sarif -o combined.sarif || true
+          
+          if ls merged-sarif/*.sarif 1> /dev/null 2>&1; then
+            echo "Merging SARIF files..."
+            sarif-tools/sarif merge merged-sarif/*.sarif --output combined.sarif
+          else
+            echo "No SARIF files to merge."
+          fi
 
       - name: Upload SARIF to GitHub Security tab
+        if: ${{ always() && exists('combined.sarif') }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: combined.sarif
 
-      - name: Upload Security Reports
+      - name: Upload All Security Reports
         uses: actions/upload-artifact@v4
         with:
           name: security-reports
@@ -193,6 +201,7 @@ jobs:
             gitleaks.sarif
             trivy-fs.json
             trivy-image.json
+            combined.sarif
 
       # Container Image Signing with Cosign
       - name: Install Cosign
