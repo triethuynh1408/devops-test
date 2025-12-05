@@ -146,6 +146,12 @@ jobs:
           path: trivy-fs.sarif
           retention-days: 7
 
+      - name: Reset Trivy env vars
+        run: |
+          unset TRIVY_FORMAT
+          unset TRIVY_OUTPUT
+          unset TRIVY_EXIT_CODE
+
       - name: Fail FS scan on HIGH/CRITICAL vulnerabilities
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -177,6 +183,12 @@ jobs:
           name: trivy-image-sarif
           path: trivy-image.sarif
           retention-days: 7
+
+      - name: Reset Trivy env vars
+        run: |
+          unset TRIVY_FORMAT
+          unset TRIVY_OUTPUT
+          unset TRIVY_EXIT_CODE
 
       - name: Fail Image scan on HIGH/CRITICAL vulnerabilities
         uses: aquasecurity/trivy-action@0.28.0
