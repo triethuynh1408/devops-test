@@ -107,40 +107,40 @@ jobs:
         run: pip install semgrep
 
       - name: Run SAST (Semgrep)
-        run: semgrep scan --config auto --sarif --output semgrep.sarif
+        run: semgrep scan --config auto --sarif --output ${{ github.workspace }}/semgrep.sarif
 
       - name: Upload Semgrep SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: semgrep.sarif
+          sarif_file: ${{ github.workspace }}/semgrep.sarif
 
       - name: Upload Semgrep SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif
-          path: semgrep.sarif
+          path: ${{ github.workspace }}/semgrep.sarif
           retention-days: 7
 
       # Secret Scanning with Gitleaks
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2
         with:
-          args: detect --redact --report-format=sarif --report-path=results.sarif
+          args: detect --redact --report-format=sarif --report-path=${{ github.workspace }}/results.sarif
 
       - name: Rename SARIF file
-        run: mv results.sarif gitleaks.sarif
+        run: mv ${{ github.workspace }}/results.sarif ${{ github.workspace }}/gitleaks.sarif
 
       - name: Upload Gitleaks SARIF
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: gitleaks.sarif
+          sarif_file: ${{ github.workspace }}/gitleaks.sarif
           category: gitleaks
       
       - name: Upload Gitleaks SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: gitleaks-sarif
-          path: gitleaks.sarif
+          path: ${{ github.workspace }}/gitleaks.sarif
           retention-days: 7
 
       # Vulnerability Scanning with Trivy - Filesystem
@@ -150,7 +150,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           format: sarif
-          output: trivy-fs.sarif
+          output: ${{ github.workspace }}/trivy-fs.sarif
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: 0
           skip-setup-trivy: false
@@ -158,14 +158,14 @@ jobs:
       - name: Upload FS SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: trivy-fs.sarif
+          sarif_file: ${{ github.workspace }}/trivy-fs.sarif
           category: trivy-fs
 
       - name: Upload FS SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-fs-sarif
-          path: trivy-fs.sarif
+          path: ${{ github.workspace }}/trivy-fs.sarif
           retention-days: 7
 
       - name: Trivy FS - Fail on HIGH/CRITICAL
@@ -184,7 +184,7 @@ jobs:
         with:
           image-ref: ${{ needs.build.outputs.image_uri }}
           format: sarif
-          output: trivy-image.sarif
+          output: ${{ github.workspace }}/trivy-image.sarif
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: 0
           skip-setup-trivy: false
@@ -192,14 +192,14 @@ jobs:
       - name: Upload Image SARIF to Security Tab
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: trivy-image.sarif
+          sarif_file: ${{ github.workspace }}/trivy-image.sarif
           category: trivy-image
 
       - name: Upload Image SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-image-sarif
-          path: trivy-image.sarif
+          path: ${{ github.workspace }}/trivy-image.sarif
           retention-days: 7
 
       - name: Trivy Image - Fail on HIGH/CRITICAL
