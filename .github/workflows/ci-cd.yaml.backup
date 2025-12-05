@@ -8,7 +8,6 @@ permissions:
   contents: read
   id-token: write
   packages: write
-  security-events: write
 
 env:
   AWS_REGION: us-east-1
@@ -107,62 +106,35 @@ jobs:
 
       - name: Run SAST (Semgrep)
         run: |
-          semgrep --config=p/ci --severity=ERROR --sarif --output semgrep.sarif || true
+          semgrep --config=p/ci --severity=ERROR --error .
 
       # Secret Scanning with Gitleaks
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2
         with:
-          args: detect --source . --no-github --redact --report-format=sarif --report-path=gitleaks.sarif || true
+          args: detect --source . --no-github --redact --exit-code 1
 
       # Filesystem Scanning with Trivy
       - name: Trivy FS Scan (Python libs)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          scan-type: fs
-          severity: HIGH,CRITICAL
-          exit-code: 0
+          scan-type: "fs"
+          severity: "HIGH,CRITICAL"
+          exit-code: 1
           ignore-unfixed: true
-          format: json
-          scan-ref: .
-          vuln-type: library
-          output: trivy-fs.json
+          format: "table"
+          scan-ref: "."
+          vuln-type: "library"
           
       # Container Image Scanning with Trivy
       - name: Trivy Scan Image
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ needs.build.outputs.image_uri }}
-          severity: CRITICAL,HIGH
-          vuln-type: os,library
-          exit-code: 0
-          format: json
-          output: trivy-image.json
-
-      - name: Merge SARIF files
-        run: |
-          mkdir -p merged-sarif
-          # Only merge SARIF if files exist
-          [ -f semgrep.sarif ] && cp semgrep.sarif merged-sarif/
-          [ -f gitleaks.sarif ] && cp gitleaks.sarif merged-sarif/
-          # Use sarif-cli to merge (install if missing)
-          pip install sarif-cli
-          sarif merge merged-sarif/*.sarif -o combined.sarif || true
-
-      - name: Upload SARIF to GitHub
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: combined.sarif
-
-      - name: Upload Security Reports
-        uses: actions/upload-artifact@v3
-        with:
-          name: security-reports
-          path: |
-            semgrep.sarif
-            gitleaks.sarif
-            trivy-fs.json
-            trivy-image.json
+          severity: "CRITICAL,HIGH"
+          vuln-type: "os,library"
+          exit-code: "1"
+          format: "json"
 
       # Container Image Signing with Cosign
       - name: Install Cosign
