@@ -1,7 +1,7 @@
 .pytest_cache
 .env*
-!.env.example
-.venv
+.env.example
+.venv/
 __pycache__
 docker
 *.zip
@@ -17,6 +17,7 @@ scripts/
 .github/
 .git/
 .gitignore
+.semgrepignore
 pytest.ini
 
 # Ignore tests
