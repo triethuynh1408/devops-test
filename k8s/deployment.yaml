@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${K8S_NAMESPACE}
+  labels:
+    app: ${DEPLOYMENT_NAME}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${DEPLOYMENT_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${DEPLOYMENT_NAME}
+    spec:
+      containers:
+        - name: app
+          image: ${IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "run.sh"]
+          ports:
+            - containerPort: ${APP_PORT}
+          env:
+            - name: APP_NAME
+              value: "${DEPLOYMENT_NAME}"
+            - name: APP_REGION
+              value: "${APP_REGION}"
+            - name: APP_ENV
+              value: "${APP_ENV}"
+            - name: APP_PORT
+              value: "${APP_PORT}"
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: ${APP_PORT}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: ${APP_PORT}
+            initialDelaySeconds: 10
+            periodSeconds: 10

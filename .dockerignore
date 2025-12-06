@@ -7,3 +7,37 @@ docker
 *.zip
 client_secrets.json
 mycreds.txt
+
+# Ignore infrastructure folders
+iac/
+k8s/
+
+# Ignore scripts and tooling
+scripts/
+.github/
+.git/
+.gitignore
+pytest.ini
+
+# Ignore tests
+tests/
+
+# Python packaging/cache
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+.poetry/
+
+# Docker/build junk
+Dockerfile
+docker-compose.yml
+
+# Local dev/editor artifacts
+.env
+*.log
+.vscode/
+.idea/
+
+# Ignore markdown/docs
+README.md

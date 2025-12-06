@@ -16,6 +16,9 @@ env:
   IMAGE_TAG: ${{ github.sha }}
   K8S_NAMESPACE: dev
   DEPLOYMENT_NAME: devops-test-app
+  ALB_CERT_ARN: arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-ab12-cd34-ef56-abcdef123456
+  APP_HOST: devops-test-app.example.com
+  APP_PORT: 3000
 
 jobs:
   build:
@@ -266,3 +269,59 @@ jobs:
           name: scan-summary-report
           path: scripts/scan_summary_all.md
           retention-days: 7
+
+  # deploy:
+  #   needs: [build, security]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+
+  #     - name: Configure AWS Credentials (OIDC)
+  #       uses: aws-actions/configure-aws-credentials@v3
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+  #         aws-region: ${{ env.AWS_REGION }}
+
+  #     - name: Install kubectl
+  #       run: |
+  #         curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+  #         chmod +x kubectl
+  #         sudo mv kubectl /usr/local/bin/
+
+  #     - name: Update kubeconfig (EKS)
+  #       run: |
+  #         aws eks update-kubeconfig \
+  #           --name ${{ secrets.EKS_CLUSTER_NAME }} \
+  #           --region ${{ env.AWS_REGION }}
+
+  #     - name: Export deployment variables
+  #       run: |
+  #         export IMAGE=${{ needs.build.outputs.image_uri }}
+  #         export DEPLOYMENT_NAME=${{ env.DEPLOYMENT_NAME }}
+  #         export K8S_NAMESPACE=${{ env.K8S_NAMESPACE }}
+  #         export ALB_CERT_ARN=${{ env.ALB_CERT_ARN }}
+  #         export APP_HOST=${{ env.APP_HOST }}
+  #         export APP_REGION=${{ env.AWS_REGION }}
+  #         export APP_PORT=${{ env.APP_PORT }}
+
+  #     - name: Create namespace if not exists
+  #       run: |
+  #         kubectl create namespace $K8S_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+  #     - name: Apply manifests with envsubst
+  #       run: |
+  #         for f in k8s/*.yaml; do
+  #           envsubst < $f | kubectl apply -f -
+  #         done
+
+  #     - name: Wait for Deployment rollout
+  #       run: |
+  #         kubectl rollout status deployment/${DEPLOYMENT_NAME} --namespace $K8S_NAMESPACE
+
+  #     - name: Verify Deployment
+  #       run: |
+  #         kubectl get pods --namespace $K8S_NAMESPACE
+  #         kubectl get svc --namespace $K8S_NAMESPACE
+  #         kubectl get ingress --namespace $K8S_NAMESPACE
