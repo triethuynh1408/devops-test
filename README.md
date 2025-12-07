@@ -32,7 +32,7 @@ devops-test/
 │       ├── variables.tf
 │       ├── outputs.tf
 │       ├── dev.tfvars
-│     
+│   
 │   
 ├── scripts/
 │   └── security-summary.sh
@@ -99,10 +99,10 @@ terraform apply -var-file=dev.tfvars
 
 This creates:
 
-- ECR Repository
-- GitHub OIDC Identity Provider
-- IAM Role for GitHub Actions
-- IAM Policy for ECR Push/Pull + EKS Describe, Authentication
+- *ECR Repository*
+- *GitHub OIDC Identity Provider*
+- *IAM Role for GitHub Actions*
+- *IAM Policy for ECR Push/Pull + EKS Describe, Authentication*
 
  **Note**: The requirement states AWS account and EKS cluster already exist. Terraform here only manages ECR + IAM for CI/CD
 
@@ -119,6 +119,7 @@ The GitHub Actions workflow is defined in:
 It contains **4 jobs**:
 
 * **build job**
+
   * Checkout code
   * Install Python dependencies via Poetry
   * Run pytest
@@ -130,18 +131,11 @@ It contains **4 jobs**:
     * `image_repo`
 * **security job**
 
-    Includes full DevSecOps security workflow:
+  Includes full DevSecOps security workflow:
 
-**
-    Security Scanning:** Semgrep (SAST), Gitleaks (secrets scanning), Trivy filesystem scan, Trivy image scan
-
-**
-    Artifacts:** SARIF results uploaded to **GitHub Security tab** and **sarif-downloads artifacts**
-
-**
-    Container Signing (Cosign Keyless)**
-
-
+  * *Security Scanning:* **Semgrep** (SAST), **Gitleaks** (secrets scanning), **Trivy filesystem scan**, **Trivy image scan**
+  * *Artifacts:* SARIF results uploaded to **Artifacts** section for each run
+  * *Container Signing: **Cosign** Keyless*
 * **summary-report job**
 
   * Download SARIF reports
@@ -156,11 +150,36 @@ It contains **4 jobs**:
   - Apply all manifests using `envsubst < k8s/deployment.yaml | kubectl apply -f - `
   - Wait for rollout `kubectl rollout status deployment/devops-test-app`
 
-### Security Gates - Pipeline Fails on HIGH/CRITICAL Issues
+### Summary Report
 
-This project strictly enforces security quality.
+All security scanning results generated during CI (Trivy, Gitleaks, Semgrep, etc.) are uploaded automatically to GitHub’s **Code Scanning** system.
 
-**HIGH/CRITICAL vulnerabilities cause the pipeline to FAIL.**
+##### How to View Security Alerts
+
+* Go to your repository on GitHub
+* Navigate to **Security → Code scanning alerts**
+* Here you can:
+  * View all detected vulnerabilities
+  * Filter by severity (Critical / High / Medium / Low / Error / Warning / Note)
+  * Inspect details for each finding
+  * Track fixes and resolved issues
+
+##### View Scan Summary per Pipeline Run
+
+For each GitHub Actions run:
+
+1. Open the workflow run
+2. Go to the **Summary** tab
+3. Scroll to the bottom to find the generated **summary-report summary** (Markdown)
+4. This gives you:
+   * Overall Vulnerability Count
+   * Breakdown by Scan Files (Trivy FS, Trivy Image, Gitleak, Semgrep)
+
+###### ❗Pipeline Failure on High/Critical-Risk Issues
+
+The CI pipeline is configured to **fail automatically** if any **HIGH or CRITICAL vulnerabilities** are found during scanning.
+
+This ensures insecure artifacts are **never deployed** .
 
 Exact steps in workflow:
 
@@ -183,8 +202,6 @@ Exact steps in workflow:
 
 ```
 
-**If any HIGH or CRITICAL vulnerabilities are detected → the pipeline stops immediately** .
-
 ## Kubernetes Deployment Overview
 
 **All Kubernetes manifests support dynamic variable injection:**
@@ -197,6 +214,8 @@ K8S_NAMESPACE=dev
 IMAGE=<ECR URI>
 APP_PORT=3000
 APP_REGION=us-east-1
+APP_HOST=devops-test-app.example.com
+ALB_CERT_ARN=arn:aws:acm:us-east-1:123456789012:certificate/abcd1234-ab12-cd34-ef56-abcdef123456
 APP_ENV=dev
 
 ```
